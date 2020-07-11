@@ -41,7 +41,7 @@ $ objectpath file.json
 `````
 or
 `````sh
-$ git clone https://github.com/adriank/ObjectPath.git
+$ git clone https://github.com/saithalavi/ObjectPath
 $ cd ObjectPath
 $ python shell.py file.json
 `````
@@ -60,7 +60,7 @@ $ python
 `````
 
 `````sh
-$ git clone https://github.com/adriank/ObjectPath.git
+$ git clone https://github.com/saithalavi/ObjectPath
 $ cd ObjectPath
 $ python
 >>> from objectpath import *
@@ -73,7 +73,7 @@ $ python
 Contributing & bugs
 -------------------
 
-I appreciate all contributions and bugfix requests for ObjectPath, however since I don't code in Python anymore, this library is not maintained as of now. Since I can't fully assure that code contributed by others meets quality standards, I can't accept PRs. 
+I appreciate all contributions and bugfix requests for ObjectPath, however since I don't code in Python anymore, this library is not maintained as of now. Since I can't fully assure that code contributed by others meets quality standards, I can't accept PRs.
 
 If you feel you could maintain this code, ping me. I'd be more than happy to transfer this repo to a dedicated ObjectPath organization on GitHub and give the ownership to someone with more time for this project than me.
 

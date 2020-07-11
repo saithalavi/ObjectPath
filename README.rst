@@ -1,3 +1,7 @@
+This is a fork from https://github.com/adriank/ObjectPath
+
+I intent to add data modification support here.
+
 ObjectPath
 ==========
 
@@ -56,7 +60,7 @@ or
 
 .. code:: sh
 
-   $ git clone https://github.com/adriank/ObjectPath.git
+   $ git clone https://github.com/saithalavi/ObjectPath
    $ cd ObjectPath
    $ python shell.py file.json
 
@@ -75,7 +79,7 @@ Python usage
 
 .. code:: sh
 
-   $ git clone https://github.com/adriank/ObjectPath.git
+   $ git clone https://github.com/saithalavi/ObjectPath
    $ cd ObjectPath
    $ python
    >>> from objectpath import *
