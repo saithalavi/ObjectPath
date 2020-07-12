@@ -10,6 +10,11 @@ from itertools import chain
 SELECTOR_OPS = [
   "is", ">", "<", "is not", ">=", "<=", "in", "not in", ":", "and", "or", "matches", "fn"
 ]
+
+BINARY_OPS = [".", "..", "+", "-", "*", "/", "%", "<", ">", "<=", ">="]
+
+BINARY_OPS_WITH_SPACE = ["and", "or", "is", "is not", "in", "not in", "matches", "re"]
+
 # it must be list because of further concatenations
 NUM_TYPES = [int, float]
 
@@ -37,6 +42,9 @@ class ProgrammingError(Exception):
 
 class ExecutionError(Exception):
   pass
+
+class InvalidPath(Exception):
+    pass
 
 PY_TYPES_MAP = {
   "int": "number",

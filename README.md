@@ -31,15 +31,6 @@ Documentation
 -------------
 
 [ObjectPath Reference](http://objectpath.org/reference.html)
-
-Command line usage
------
-
-`````sh
-$ sudo pip install objectpath
-$ objectpath file.json
-`````
-or
 `````sh
 $ git clone https://github.com/saithalavi/ObjectPath
 $ cd ObjectPath
@@ -50,24 +41,59 @@ Python usage
 ----------------
 
 `````sh
-$ sudo pip install objectpath
-$ python
->>> from objectpath import *
->>> tree=Tree({"a":1})
->>> tree.execute("$.a")
-1
->>>
-`````
-
-`````sh
 $ git clone https://github.com/saithalavi/ObjectPath
 $ cd ObjectPath
-$ python
->>> from objectpath import *
->>> tree=Tree({"a":1})
->>> tree.execute("$.a")
-1
->>>
+$ python3
+>>> data = {'user': [{'name': 'Ambu', 'age': '7.5'}, {'name': 'Amaan', 'age': 3.5}]}
+>>> import objectpath
+>>> tree = objectpath.Tree(data)
+>>> tree.data
+{'user': [{'name': 'Ambu', 'age': '7.5'}, {'name': 'Amaan', 'age': 3.5}]}
+>>> """ tree.data returns a copy. So user cannot corrupt data handled by tree """
+>>> tdata = tree.data
+>>> tdata['user'][1]
+{'name': 'Amaan', 'age': 3.5}
+>>> del tdata['user'][1]
+>>> tdata
+{'user': [{'name': 'Ambu', 'age': '7.5'}]}
+>>> del tdata['user'][0]
+>>> tdata
+{'user': []}
+>>> tree.data
+{'user': [{'name': 'Ambu', 'age': '7.5'}, {'name': 'Amaan', 'age': 3.5}]}
+>>> tree.data
+{'user': [{'name': 'Ambu', 'age': '7.5'}, {'name': 'Amaan', 'age': 4}]}
+>>> tree.update("$[@.name is not 'Amaan'].age", 7)
+>>> tree.update("$.user[@.name is not 'Amaan'].age", 7)
+True
+>>> tree.data
+{'user': [{'name': 'Ambu', 'age': 7}, {'name': 'Amaan', 'age': 4}]}
+>>> tree.update("$.user[@.name is not 'Amaan'].name", "Amjad")
+True
+>>> tree.data
+{'user': [{'name': 'Amjad', 'age': 7}, {'name': 'Amaan', 'age': 4}]}
+>>> tree.delete("$.user[@.name is not 'Amaan']")
+True
+>>> tree.data
+{'user': [{'name': 'Amaan', 'age': 4}]}
+>>> tree.delete("$.user[0]")
+True
+>>> tree.data
+{'user': []}
+>>> tree.delete("$")
+True
+>>> tree.data
+{}
+>>> data = [{'name': 'Amjad', 'age': 8, 'grades': ['A', 'A+']}, {'name': 'ami', 'age': 5}]
+>>> tree = objectpath.Tree(data)
+>>> tree.delete("$[0].grades")
+True
+>>> tree.data
+[{'name': 'Amjad', 'age': 8}, {'name': 'ami', 'age': 5}]
+>>> tree.update("$[2]", {'name': 'new', 'age': 5})
+True
+>>> tree.data
+[{'name': 'Amjad', 'age': 8}, {'name': 'ami', 'age': 5}, {'name': 'new', 'age': 5}]
 `````
 
 Contributing & bugs

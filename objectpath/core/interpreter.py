@@ -3,6 +3,7 @@
 # This file is part of ObjectPath released under MIT license.
 # Copyright (C) 2010-2014 Adrian Kalbarczyk
 
+import copy
 import sys, re
 from .parser import parse
 from objectpath.core import *
@@ -13,11 +14,50 @@ from objectpath.core import ITER_TYPES, generator, chain
 from objectpath.utils.debugger import Debugger
 
 EPSILON = 0.0000000000000001  #this is used in float comparison
-EXPR_CACHE = {}
 RE_TYPE = type(re.compile(''))
 # setting external modules to 0, thus enabling lazy loading. 0 ensures that Pythonic types are never matched.
 # this way is efficient because if statement is fast and once loaded these variables are pointing to libraries.
 ObjectId = generateID = calendar = escape = escapeDict = unescape = unescapeDict = 0
+
+
+def create_path_from_tree(tree):
+  if isinstance(tree, tuple) and tree:
+      op = tree[0]
+      if op == "[":
+        if len(tree) == 1:
+          return "[]"
+        elif len(tree) == 2:
+          if isinstance(tree[1], list):
+              return "[{}]".format(", ".join([str(create_path_from_tree(x)) for x in tree[1]]))
+          else:
+              return "[{}]".format(str(create_path_from_tree(tree[1])))
+        else:
+          return "{}[{}]".format(str(create_path_from_tree(tree[1])), str(create_path_from_tree(tree[2])))
+
+      if len(tree) > 2:
+        if op in BINARY_OPS:
+          return create_path_from_tree(tree[1]) + op + create_path_from_tree(tree[2])
+        if op in BINARY_OPS_WITH_SPACE:
+          return create_path_from_tree(tree[1]) + " " + op + " " + create_path_from_tree(tree[2])
+        else:
+          raise InvalidPath("create_path_from_tree: Unsupported BINARY_OP: {}".format(op))
+
+      if op == "(root)":
+        return "$"
+      elif op == "name":
+        return tree[1]
+      elif op == "(current)":
+        return "@"
+      elif op in ["-", "+"]:
+        return op + create_path_from_tree(tree[1])
+      elif op in ["not"]:
+        return op + " " + create_path_from_tree(tree[1])
+  else:
+      if isinstance(tree, str):
+        return "'" + tree + "'"
+      return str(tree)
+  raise InvalidPath("create_path_from_tree: Unsupported tree: {}".format(str(tree)))
+
 
 class Tree(Debugger):
   _REGISTERED_FUNCTIONS = {}
@@ -33,17 +73,40 @@ class Tree(Debugger):
     cls._REGISTERED_FUNCTIONS[name] = func
 
   def __init__(self, obj, cfg=None):
+    self._locked = False
+    self._data = None
     if not cfg:
       cfg = {}
     self.D = cfg.get("debug", False)
     self.setObjectGetter(cfg.get("object_getter", None))
     self.setData(obj)
     self.current = self.node = None
+    self._expr_cache = {}
     if self.D: super(Tree, self).__init__()
+    self._locked = True
+
+  @property
+  def data(self):
+    if not self._locked:
+      return self._data
+    return copy.deepcopy(self._data)
+
+  @data.setter
+  def data(self, newdata):
+    if type(newdata) in ITER_TYPES + [dict]:
+      self._data = copy.deepcopy(newdata)
+      self.sanitize_tree_state()
+    else:
+      raise ValueError("Type: {} is not supported".format(type(newdata)))
+
+  def getData(self):
+    return self.data
+
+  def sanitize_tree_state(self):
+    self._expr_cache = {}
 
   def setData(self, obj):
-    if type(obj) in ITER_TYPES + [dict]:
-      self.data = obj
+    self.data = obj
 
   def setObjectGetter(self, object_getter_cb):
     if callable(object_getter_cb):
@@ -61,14 +124,40 @@ class Tree(Debugger):
       self.object_getter = default_getter
 
   def compile(self, expr):
-    if expr in EXPR_CACHE:
-      return EXPR_CACHE[expr]
-    ret = EXPR_CACHE[expr] = parse(expr, self.D)
+
+    def replace_dummy_path(tree):
+      if tree == ('.', ('(root)', 'rs'), ('name', 'dummy')):
+        return tuple(('(root)', 'rs'))
+      elif isinstance(tree, tuple):
+        return tuple((replace_dummy_path(i) for i in tree))
+      else:
+        return tree
+
+    path = expr.strip()
+
+    if path in self._expr_cache:
+      return self._expr_cache[path]
+
+    if isinstance(self.data, list):
+      if path == "$":
+        return ('(root)', 'rs')
+      if path.startswith("$"):
+        suffix = path[1:].strip()
+        if suffix.startswith("["):
+            """ The parse seems to fail when root is a list """
+            newpath = "$.dummy" + suffix
+            tree = self._expr_cache[expr] = replace_dummy_path(parse(newpath, self.D))
+            return tree
+    ret = self._expr_cache[expr] = parse(expr, self.D)
     return ret
 
   def execute(self, expr):
     D = self.D
     if D: self.start("Tree.execute")
+
+    if expr.strip() == "$":
+      return self.data
+
     TYPES = [str, int, float, bool, generator, chain]
     try:
       TYPES += [long]
@@ -756,6 +845,237 @@ class Tree(Debugger):
     ret = exe(tree)
     if D: self.end("Tree.execute with: %s", color.bold(self.cleanOutput(ret)))
     return ret
+
+    def delete(self, path_str):
+      """ Returns True if data at any path is deleted or the path is missing """
+      self._locked = False
+      try:
+        return self._update(path_str, None, delete=True)
+      finally:
+        self._locked = True
+
+  def update(self, path_str, newvalue):
+    """ Returns True if the tree is updated due to this operation.
+      Multiple elements can be modified if selectors are used in path"""
+    self._locked = False
+    try:
+      return self._update(path_str, newvalue, delete=False)
+    finally:
+      self._locked = True
+
+  def delete(self, path_str):
+    """ Returns True if data at any path is deleted or the path is missing """
+    self._locked = False
+    try:
+      return self._update(path_str, None, delete=True)
+    finally:
+      self._locked = True
+
+  def _update(self, path_str, newvalue, delete):
+
+    def validate_new_value():
+      """
+      TODO:
+      If the newly added value to be validated, or modified before setting.
+      eq. Convert None to {} for root data or convert tuples and sets to list
+      """
+      return True, newvalue
+
+    if delete is not True:
+      r, newvalue = validate_new_value()
+      if not r:
+        raise ValueError("Invalid value: {}".format(str(newvalue)))
+
+    if path_str and type(path_str) in STR_TYPES:
+      path = path_str.strip()
+
+      if path == "$":
+        """ Special case. Update the whole tree """
+        self.sanitize_tree_state()
+        if delete is True:
+          self.data = {}
+          return True
+        self.data = newvalue
+        return True
+      else:
+        try:
+          tree = self.compile(path)
+        except Exception as e:
+          raise InvalidPath("Objectpath parsing failed with exception {}: {}".format(type(e), str(e)))
+
+        if len(tree) < 3:
+          raise InvalidPath("Objectpath parsing failed. Parse tree is {}".format(str(tree)))
+
+        try:
+          # Find if we have a single parent or more
+          parent_path = create_path_from_tree(tree[1])
+          parent = self.execute(parent_path)
+
+          if parent is None:
+            # Means broken path
+            # If the path is creatable under the current tree, do it
+            parent = attempt_creation(parent_path)
+            if not parent:
+              if delete is True:
+                return True
+              raise InvalidPath("Objectpath value update failed for path: {}. {}".format(
+                parent_path, "Unable to create path for current data"))
+
+          if isinstance(parent, generator):
+            # Means some selector is involved. Can have multiple hits
+            parents = list(parent)
+          else:
+            # Hopefully, straightforward addressing. Single path to patch
+            parents = [parent]
+
+          if not parents:
+            return delete is True
+
+          child_path = create_path_from_tree(tree[2])
+
+          if tree[0] == ".":
+            """
+            Format: "$.<optional-ancestors>.child"
+            """
+            exp = None
+            modified = False
+
+            for parent in parents:
+              try:
+                if delete is True:
+                  if child_path in parent:
+                    del parent[child_path]
+                    modified = True
+                else:
+                  parent[child_path] = newvalue
+                  modified = True
+              except Exception as e:
+                if not exp:
+                  exp = e
+            if modified:
+              self.sanitize_tree_state()
+            if exp:
+              if delete is True:
+                return True
+              raise InvalidPath(
+                "Objectpath value update failed with exception {}: {}".format(type(exp), str(exp)))
+            return modified
+          elif tree[0] == "[":
+            """
+            Format: "$.<optional-ancestors>.child[0] or
+                "$.<optional-ancestors>.child[@condition]
+            """
+
+            # Now find out if the content inside the bracket can be used as a key or an index
+
+            def is_selector(child_tree):
+              if isinstance(child_tree, tuple) and child_tree:
+                if (len(child_tree) > 1) and (child_tree[0] in SELECTOR_OPS):
+                  return True
+              return False
+
+            if not is_selector(tree[2]):
+              child_value = self.execute(child_path)
+
+              exp = None
+              modified = False
+
+              for parent in parents:
+                try:
+                  if delete is True:
+                    if isinstance(parent, list):
+                      if isinstance(child_value, int) and len(parent) > child_value:
+                        del parent[child_value]
+                    else:
+                      if child_value in parent:
+                        del parent[child_value]
+                    modified = True
+                  else:
+                    if isinstance(parent, list) and len(parent) == child_value:
+                        parent.append(newvalue)
+                        modified = True
+                    else:
+                      parent[child_value] = newvalue
+                      modified = True
+                except Exception as e:
+                  exp = e
+
+              if modified:
+                self.sanitize_tree_state()
+              if exp:
+                if delete is True:
+                  return True
+                raise InvalidPath(
+                  "Objectpath value update failed with exception {}: {}".format(type(exp), str(exp)))
+              return (delete is True) or modified
+            else:
+              targets = []
+              target = self.execute(path)
+              if isinstance(target, generator):
+                targets = list(target)
+              elif target is not None:
+                targets = [target]
+
+              if not targets:
+                return delete is True
+
+              g_parents = []
+              parent_tree = self.compile(parent_path)
+
+              if parent_path == "$":
+                g_parent = self.data
+              else:
+                """ TODO: Next line should break for some paths. Find and handle them """
+                g_parent = self.execute(create_path_from_tree(parent_tree[1]))
+
+              if isinstance(g_parent, generator):
+                g_parents = list(g_parent)
+              elif g_parent is not None:
+                g_parents = [g_parent]
+              else:
+                g_parents = [self.data]
+
+              exp = None
+              modified = False
+
+              for parent in parents:
+                if isinstance(parent, list):
+                  for target in targets:
+                    if target != newvalue:
+                      while True:
+                        try:
+                          i = parent.index(target)
+                          if delete is True:
+                            del parent[i]
+                          else:
+                            parent[i] = newvalue
+                          modified = True
+                        except ValueError as e:
+                          break
+                elif isinstance(parent, dict):
+                  if parent != newvalue:
+                    for g_parent in g_parents:
+                      if isinstance(g_parent, list):
+                        while True:
+                          try:
+                            i = g_parent.index(parent)
+                            if delete is True:
+                              del g_parent[i]
+                            else:
+                              g_parent[i] = newvalue
+                            modified = True
+                          except ValueError as e:
+                            break
+              if modified:
+                self.sanitize_tree_state()
+              return (delete is True) or modified
+        except Exception as e:
+          raise InvalidPath("Objectpath splitting failed with exception {}: {}".format(type(e), str(e)))
+
+    else:
+      raise InvalidPath("Invalid path: {}".format(str(path_str)))
+
+    return delete is True
 
   def __str__(self):
     return "TreeObject()"
