@@ -155,7 +155,7 @@ class Tree(Debugger):
     D = self.D
     if D: self.start("Tree.execute")
 
-    if expr.strip() == "$":
+    if type(expr) == str and expr.strip() == "$":
       return self.data
 
     TYPES = [str, int, float, bool, generator, chain]
