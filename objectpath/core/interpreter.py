@@ -139,13 +139,13 @@ class Tree(Debugger):
         if isinstance(self.data, list):
             if path == "$":
                 return ('(root)', 'rs')
-            if path.startswith("$"):
-                suffix = path[1:].strip()
-                if suffix.startswith("["):
-                    """ The parse seems to fail when root is a list """
-                    newpath = "$.dummy" + suffix
-                    tree = self._expr_cache[expr] = replace_dummy_path(parse(newpath, self.D))
-                    return tree
+        if path.startswith("$"):
+            suffix = path[1:].strip()
+            if suffix.startswith("["):
+                """ The parse seems to fail when root is a list """
+                newpath = "$.dummy" + suffix
+                tree = self._expr_cache[expr] = replace_dummy_path(parse(newpath, self.D))
+                return tree
         ret = self._expr_cache[expr] = parse(expr, self.D)
         return ret
 
