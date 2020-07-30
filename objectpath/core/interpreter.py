@@ -331,8 +331,12 @@ class Tree(Debugger):
                             except Exception:
                                 if D: self.debug("discarded")
 
-                # if D and nodeList: self.debug("returning '%s' objects: '%s'", color.bold(len(nodeList)), color.bold(nodeList))
-                return exeSelector(fst)
+                if type(fst) == generator:
+                    for i in list(fst):
+                        return exeSelector(i)
+                else:
+                  # if D and nodeList: self.debug("returning '%s' objects: '%s'", color.bold(len(nodeList)), color.bold(nodeList))
+                  return exeSelector(fst)
             self.current = fst
             snd = self._execute_node(node[2])
             typefst = type(fst)
